@@ -408,53 +408,6 @@ const topicsFM = {
       "Continuity correction when approximating a discrete distribution",
     ],
   },
-  "Discrete Maths": {
-    "Algorithms": [
-      "Describe, trace and dry-run an algorithm",
-      "Bubble sort — compare adjacent pairs, repeat passes",
-      "Quick sort — choose pivot, partition, recurse",
-      "Counting comparisons and swaps for sorting algorithms",
-      "Binary search — halve search space at each step",
-      "Order of an algorithm — understand O(n) vs O(n²)",
-    ],
-    "Graph Theory": [
-      "Vertices, edges, degree — sum of degrees = 2 × edges",
-      "Simple, connected, directed and weighted graphs",
-      "Adjacency matrix and adjacency list representations",
-      "Walk, trail, path, cycle — definitions",
-      "Eulerian graph — every vertex even degree, Eulerian trail possible",
-      "Semi-Eulerian — exactly two vertices of odd degree",
-      "Hamiltonian path/cycle — visits every vertex exactly once",
-      "Planar graphs and Euler's formula V − E + F = 2",
-    ],
-    "Trees & Networks": [
-      "Tree — connected, no cycles; n vertices → n−1 edges",
-      "Spanning tree — spans all vertices, no cycles",
-      "Kruskal's algorithm — add cheapest edge that doesn't form a cycle",
-      "Prim's algorithm — grow tree from one vertex, always add cheapest edge",
-      "Compare Kruskal's and Prim's — same result, different process",
-      "Dijkstra's algorithm — find shortest path from source to all vertices",
-      "Trace Dijkstra's — permanent and temporary labels",
-    ],
-    "Route Inspection & Travelling Salesman": [
-      "Route inspection (Chinese Postman) — traverse every edge at least once",
-      "Identify odd-degree vertices — must pair them up",
-      "Find minimum weight matching of odd vertices",
-      "Minimum route inspection distance = total weight + weight of matching",
-      "Travelling Salesman Problem (TSP) — visit every vertex, return to start",
-      "Upper bound for TSP — use a Hamiltonian cycle (e.g. nearest neighbour)",
-      "Lower bound for TSP — remove a vertex, find MST of remainder, add two cheapest edges to removed vertex",
-      "Improve bounds — repeat with different vertices removed",
-    ],
-    "Linear Programming": [
-      "Formulate constraints as linear inequalities from a word problem",
-      "Define the objective function to maximise or minimise",
-      "Feasible region — intersection of all constraint half-planes",
-      "Graph the feasible region — shade correctly",
-      "Optimal vertex — test objective function at each vertex of feasible region",
-      "Integer programming — optimal integer solution may not be at LP vertex",
-    ],
-  },
 };
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -474,7 +427,6 @@ const SECTION_COLORS = {
     "Core Pure":         { accent: "#c084fc" },
     "Further Mechanics": { accent: "#2dd4bf" },
     "Further Statistics":{ accent: "#f472b6" },
-    "Discrete Maths":    { accent: "#fb923c" },
   },
 };
 
@@ -589,6 +541,21 @@ export default function Checklist() {
     return data[item] || "not-started";
   };
 
+  const PERSONAL_PEOPLE = PEOPLE.filter(p => p.id !== "group").map(p => p.id);
+
+  const upsertItem = async (personId, subj, item, state) => {
+    const encoded = encode(subj, item);
+    if (state === "not-started") {
+      await supabase.from("checklist_progress").delete()
+        .eq("person", personId).eq("item", encoded);
+    } else {
+      await supabase.from("checklist_progress").upsert(
+        { person: personId, item: encoded, state, updated_at: new Date().toISOString() },
+        { onConflict: "person,item" }
+      );
+    }
+  };
+
   const cycleItem = (item) => {
     const cur  = getState(item);
     const next = cur === "not-started" ? "started"
@@ -596,29 +563,50 @@ export default function Checklist() {
                :                        "not-started";
 
     const newSubjData = { ...personData, [item]: next };
-    setAllData(prev => ({
-      ...prev,
-      [activePerson]: { ...prev[activePerson], [activeSubject]: newSubjData },
-    }));
+
+    if (activePerson === "group" && next === "done") {
+      // Propagate "done" to all personal members who haven't already ticked this
+      setAllData(prev => {
+        const updated = { ...prev, [activePerson]: { ...prev[activePerson], [activeSubject]: newSubjData } };
+        for (const pid of PERSONAL_PEOPLE) {
+          const curState = prev[pid]?.[activeSubject]?.[item] || "not-started";
+          if (curState !== "done") {
+            updated[pid] = { ...prev[pid], [activeSubject]: { ...prev[pid]?.[activeSubject], [item]: "done" } };
+          }
+        }
+        return updated;
+      });
+
+      const key = `group::${activeSubject}::${item}`;
+      clearTimeout(pendingRef.current[key]);
+      pendingRef.current[key] = setTimeout(async () => {
+        await upsertItem("group", activeSubject, item, next);
+        for (const pid of PERSONAL_PEOPLE) {
+          const curState = allData[pid]?.[activeSubject]?.[item] || "not-started";
+          if (curState !== "done") {
+            await upsertItem(pid, activeSubject, item, "done");
+            try {
+              const stored = JSON.parse(localStorage.getItem(`aqa-${activeSubject === "maths" ? "7356" : "7366"}-${pid}`) || "{}");
+              stored[item] = "done";
+              localStorage.setItem(`aqa-${activeSubject === "maths" ? "7356" : "7366"}-${pid}`, JSON.stringify(stored));
+            } catch { /* ignore */ }
+          }
+        }
+      }, 300);
+    } else {
+      setAllData(prev => ({
+        ...prev,
+        [activePerson]: { ...prev[activePerson], [activeSubject]: newSubjData },
+      }));
+
+      const key = `${activePerson}::${activeSubject}::${item}`;
+      clearTimeout(pendingRef.current[key]);
+      pendingRef.current[key] = setTimeout(() => upsertItem(activePerson, activeSubject, item, next), 300);
+    }
 
     try {
       localStorage.setItem(`aqa-${activeSubject === "maths" ? "7356" : "7366"}-${activePerson}`, JSON.stringify(newSubjData));
     } catch { /* ignore */ }
-
-    const key = `${activePerson}::${activeSubject}::${item}`;
-    clearTimeout(pendingRef.current[key]);
-    pendingRef.current[key] = setTimeout(async () => {
-      const encoded = encode(activeSubject, item);
-      if (next === "not-started") {
-        await supabase.from("checklist_progress").delete()
-          .eq("person", activePerson).eq("item", encoded);
-      } else {
-        await supabase.from("checklist_progress").upsert(
-          { person: activePerson, item: encoded, state: next, updated_at: new Date().toISOString() },
-          { onConflict: "person,item" }
-        );
-      }
-    }, 300);
   };
 
   const handleReset = async () => {
@@ -737,7 +725,7 @@ export default function Checklist() {
           })}
           {activeSubject === "fm" && (
             <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: "0.58rem", fontFamily: "monospace", color: "#3f3f46" }}>
-              tick only your optional section (Mechanics / Statistics / Discrete)
+              tick only your optional section (Mechanics / Statistics)
             </span>
           )}
         </div>
