@@ -430,6 +430,39 @@ const SECTION_COLORS = {
   },
 };
 
+// ─── A-level only items (not on AS spec) — shown crossed out, excluded from % ─
+
+const ALEVEL_MATHS = new Set([
+  "Modulus function — |x|, sketch and solve equations",
+]);
+
+const ALEVEL_FM = new Set([
+  // Matrices — 3×3 not in AS FM spec (only 2×2)
+  "Determinant of 3×3 matrix — cofactor expansion along a row",
+  "Inverse of 3×3 matrix — find adjugate and divide by det",
+  // Further Calculus — only volumes & mean values are in AS FM spec
+  "Integration by substitution — choose u, change limits for definite integrals",
+  "Integration by parts — ∫u(dv/dx)dx = uv − ∫v(du/dx)dx",
+  "Repeated integration by parts (e.g. ∫x²eˣ dx)",
+  "Use partial fractions in integration — gives ln terms",
+  "Integrate using double angle and other trig identities",
+  "Integrate 1/(a²+x²) → (1/a)arctan(x/a)",
+  "Integrate 1/√(a²−x²) → arcsin(x/a)",
+  "First-order separable differential equations — separate variables, integrate both sides",
+  "Apply boundary conditions to find particular solution",
+  // Further Vectors — planes & cross product not in AS FM spec (only lines)
+  "Equation of a plane — r·n = d",
+  "Cartesian equation of plane — ax+by+cz = d",
+  "Normal vector to a plane",
+  "Find equation of plane given 3 points",
+  "Angle between two planes — angle between normals",
+  "Angle between a line and a plane",
+  "Point of intersection of a line and a plane",
+  "Distance from a point to a plane — formula",
+  "Cross product a × b — magnitude |a||b|sinθ, direction perpendicular to both",
+  "Use cross product to find normal to a plane",
+]);
+
 const PEOPLE = [
   { id: "adi",    label: "Adi",    accent: "#a78bfa", dim: "#a78bfa30", glow: "#a78bfa14" },
   { id: "ahmed",  label: "Ahmed",  accent: "#38bdf8", dim: "#38bdf830", glow: "#38bdf814" },
@@ -464,7 +497,10 @@ export default function Checklist() {
   const topics        = activeSubject === "maths" ? topicsMaths : topicsFM;
   const sectionColors = SECTION_COLORS[activeSubject];
   const allItems      = Object.values(topics).flatMap(s => Object.values(s).flat());
-  const totalTopics   = allItems.length;
+  const aLevelSet     = activeSubject === "maths" ? ALEVEL_MATHS : ALEVEL_FM;
+  const isALevel      = (item) => aLevelSet.has(item);
+  const asItems       = allItems.filter(t => !isALevel(t));
+  const totalTopics   = asItems.length;
 
   const person     = PEOPLE.find(p => p.id === activePerson);
   const personData = allData[activePerson]?.[activeSubject] || {};
@@ -649,20 +685,22 @@ export default function Checklist() {
   const getStats = (pid, subj) => {
     const s    = subj ?? activeSubject;
     const tops = s === "maths" ? topicsMaths : topicsFM;
-    const its  = Object.values(tops).flatMap(g => Object.values(g).flat());
+    const aSet = s === "maths" ? ALEVEL_MATHS : ALEVEL_FM;
+    const its  = Object.values(tops).flatMap(g => Object.values(g).flat()).filter(t => !aSet.has(t));
     const data = allData[pid]?.[s] || {};
     const done    = its.filter(t => (data[t] || "not-started") === "done").length;
     const started = its.filter(t => (data[t] || "not-started") === "started").length;
-    return { done, started, total: its.length, pct: Math.round(done / its.length * 100) };
+    return { done, started, total: its.length, pct: its.length ? Math.round(done / its.length * 100) : 0 };
   };
 
-  const doneCount       = allItems.filter(t => getState(t) === "done").length;
-  const startedCount    = allItems.filter(t => getState(t) === "started").length;
+  const doneCount       = asItems.filter(t => getState(t) === "done").length;
+  const startedCount    = asItems.filter(t => getState(t) === "started").length;
   const notStartedCount = totalTopics - doneCount - startedCount;
-  const pct             = Math.round(doneCount / totalTopics * 100);
-  const activePct       = Math.round((doneCount + startedCount) / totalTopics * 100);
+  const pct             = totalTopics ? Math.round(doneCount / totalTopics * 100) : 0;
+  const activePct       = totalTopics ? Math.round((doneCount + startedCount) / totalTopics * 100) : 0;
 
   const visible = (item) => {
+    if (isALevel(item)) return filter === "all" || filter === "done";
     const s = getState(item);
     if (filter === "done")        return s === "done";
     if (filter === "started")     return s === "started";
@@ -844,7 +882,7 @@ export default function Checklist() {
           {/* Per-section pills */}
           <div style={{ display: "flex", gap: "0.7rem", marginTop: "0.55rem", flexWrap: "wrap" }}>
             {Object.entries(topics).map(([sec, groups]) => {
-              const items   = Object.values(groups).flat();
+              const items   = Object.values(groups).flat().filter(t => !isALevel(t));
               const done    = items.filter(t => getState(t) === "done").length;
               const started = items.filter(t => getState(t) === "started").length;
               const col     = sectionColors[sec];
@@ -894,11 +932,11 @@ export default function Checklist() {
         <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
           {Object.entries(topics).map(([section, groups]) => {
             const col          = sectionColors[section];
-            const secItems     = Object.values(groups).flat();
+            const secItems     = Object.values(groups).flat().filter(t => !isALevel(t));
             const secDone      = secItems.filter(t => getState(t) === "done").length;
             const secStarted   = secItems.filter(t => getState(t) === "started").length;
-            const secPct       = Math.round(secDone / secItems.length * 100);
-            const secActivePct = Math.round((secDone + secStarted) / secItems.length * 100);
+            const secPct       = secItems.length ? Math.round(secDone / secItems.length * 100) : 0;
+            const secActivePct = secItems.length ? Math.round((secDone + secStarted) / secItems.length * 100) : 0;
             const isSectionCollapsed = collapsed[section];
 
             return (
@@ -936,8 +974,9 @@ export default function Checklist() {
                 {!isSectionCollapsed && (
                   <div style={{ padding: "0.45rem 1rem 0.9rem" }}>
                     {Object.entries(groups).map(([group, items]) => {
-                      const gDone    = items.filter(t => getState(t) === "done").length;
-                      const gStarted = items.filter(t => getState(t) === "started").length;
+                      const asOnlyItems = items.filter(t => !isALevel(t));
+                      const gDone    = asOnlyItems.filter(t => getState(t) === "done").length;
+                      const gStarted = asOnlyItems.filter(t => getState(t) === "started").length;
                       const visItems = items.filter(visible);
                       if (visItems.length === 0) return null;
                       const gKey  = `${section}__${group}`;
@@ -956,8 +995,8 @@ export default function Checklist() {
                             }}
                           >
                             <span style={{ fontSize: "0.62rem", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.14em", color: "#52525b" }}>{group}</span>
-                            <span style={{ fontSize: "0.58rem", fontFamily: "monospace", color: gDone === items.length ? col.accent : "#3f3f46" }}>
-                              {gDone}/{items.length}
+                            <span style={{ fontSize: "0.58rem", fontFamily: "monospace", color: gDone === asOnlyItems.length ? col.accent : "#3f3f46" }}>
+                              {gDone}/{asOnlyItems.length}
                               {gStarted > 0 && <span style={{ color: "#52525b" }}> · {gStarted}▸</span>}
                               {" "}{gColl ? "▶" : "▼"}
                             </span>
@@ -966,34 +1005,37 @@ export default function Checklist() {
                           {!gColl && (
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.06rem" }}>
                               {visItems.map(item => {
+                                const aLevel    = isALevel(item);
                                 const state     = getState(item);
-                                const isDone    = state === "done";
-                                const isStarted = state === "started";
+                                const isDone    = aLevel || state === "done";
+                                const isStarted = !aLevel && state === "started";
 
                                 return (
                                   <div
                                     key={item}
-                                    role="checkbox"
+                                    role={aLevel ? "presentation" : "checkbox"}
                                     aria-checked={isDone ? "true" : isStarted ? "mixed" : "false"}
                                     aria-label={item}
-                                    tabIndex={0}
-                                    onClick={() => cycleItem(item)}
-                                    onKeyDown={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); cycleItem(item); }}}
+                                    tabIndex={aLevel ? -1 : 0}
+                                    onClick={aLevel ? undefined : () => cycleItem(item)}
+                                    onKeyDown={aLevel ? undefined : (e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); cycleItem(item); }})}
                                     style={{
                                       display: "flex", alignItems: "flex-start", gap: "0.52rem",
-                                      cursor: "pointer", padding: "0.26rem 0.38rem", borderRadius: 5,
-                                      background: isDone    ? `${person.accent}0b`
+                                      cursor: aLevel ? "default" : "pointer",
+                                      padding: "0.26rem 0.38rem", borderRadius: 5,
+                                      background: isDone    ? (aLevel ? "#1a1a1e" : `${person.accent}0b`)
                                                 : isStarted ? `${person.accent}06`
                                                 : "transparent",
                                       outline: "none", transition: "background 0.12s",
+                                      opacity: aLevel ? 0.55 : 1,
                                     }}
                                   >
                                     <div aria-hidden="true" style={{
                                       flexShrink: 0, marginTop: 3, width: 15, height: 15, borderRadius: 3,
-                                      border: isDone    ? `2px solid ${person.accent}`
+                                      border: isDone    ? `2px solid ${aLevel ? "#3f3f46" : person.accent}`
                                             : isStarted ? `2px solid ${person.accent}80`
                                             : "2px solid #3f3f46",
-                                      background: isDone    ? person.accent
+                                      background: isDone    ? (aLevel ? "#3f3f46" : person.accent)
                                                 : isStarted ? `${person.accent}22`
                                                 : "transparent",
                                       display: "flex", alignItems: "center", justifyContent: "center",
@@ -1004,10 +1046,12 @@ export default function Checklist() {
                                     </div>
                                     <span style={{
                                       fontSize: "0.8rem", lineHeight: 1.55, userSelect: "none",
-                                      color: isDone    ? "#3f3f46" : isStarted ? "#a1a1aa" : "#d4d4d8",
+                                      color: isDone ? "#3f3f46" : isStarted ? "#a1a1aa" : "#d4d4d8",
                                       textDecoration: isDone ? "line-through" : "none",
                                       transition: "all 0.12s",
+                                      flex: 1,
                                     }}>{item}</span>
+                                    {aLevel && <span style={{ fontSize: "0.5rem", fontFamily: "monospace", color: "#3f3f46", flexShrink: 0, alignSelf: "center", letterSpacing: "0.05em" }}>A2</span>}
                                   </div>
                                 );
                               })}
